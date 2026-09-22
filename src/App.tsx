@@ -1,128 +1,151 @@
-import "./styles.css";
+import { useMemo, useState } from "react";
+import { StoreProvider, useStore } from "./state/store";
+import { ToastProvider, useHashRoute } from "./components/shell";
+import { idStatusLabel } from "./rules/transfer";
+import type { IdStatus } from "./types";
+import RegisterPage from "./pages/RegisterPage";
+import QueuePage from "./pages/QueuePage";
+import BinsPage from "./pages/BinsPage";
+import LocalitiesPage from "./pages/LocalitiesPage";
+import HistoryPage from "./pages/HistoryPage";
+import SpecimenDetail from "./pages/SpecimenDetail";
 
-const project = {
-  "sourceNo": 9,
-  "id": "hxyfront-62007",
-  "port": 62007,
-  "title": "植物标本馆入库",
-  "domain": "植物标本馆",
-  "prompt": "开发一个植物标本馆压制标本入库前端项目，工作人员可以录入采集号、物种名称、采集地点、海拔、生境描述、采集人、压制状态、鉴定状态和馆藏位置。页面需要有入库队列、鉴定状态筛选、采集地点信息卡、馆藏柜位记录和单份标本详情页。",
-  "palette": [
-    "#166534",
-    "#0f766e",
-    "#ca8a04"
-  ],
-  "metrics": [
-    "入库队列",
-    "待鉴定",
-    "已上柜",
-    "采集点"
-  ],
-  "filters": [
-    "待压制",
-    "待鉴定",
-    "已入库",
-    "需补照"
-  ],
-  "fields": [
-    "采集号",
-    "物种名称",
-    "采集地点",
-    "海拔",
-    "生境描述",
-    "馆藏位置"
-  ],
-  "records": [
-    [
-      "HX-240615-01",
-      "槭属待定",
-      "海拔1420m",
-      "待鉴定"
-    ],
-    [
-      "HX-240615-08",
-      "蕨类",
-      "阴湿沟谷",
-      "已压制"
-    ],
-    [
-      "HX-240616-03",
-      "菊科",
-      "柜位B-12-04",
-      "已入库"
-    ]
-  ]
-};
+type Tab = "register" | "queue" | "bins" | "localities" | "history";
 
-function App() {
+const TABS: { id: Tab; label: string }[] = [
+  { id: "register", label: "调拨登记" },
+  { id: "queue", label: "入库队列" },
+  { id: "bins", label: "仓位记录" },
+  { id: "localities", label: "采集地卡" },
+  { id: "history", label: "调拨历史" },
+];
+
+const ID_FILTERS: { id: IdStatus | "all"; label: string }[] = [
+  { id: "all", label: "全部鉴定" },
+  { id: "unidentified", label: "待鉴定" },
+  { id: "suspect", label: "存疑待复核" },
+  { id: "identified", label: "已鉴定" },
+];
+
+function Metrics() {
+  const { state, occupancy, bins } = useStore();
+  const queued = state.batches.filter((b) => b.status === "incoming").length;
+  const pendingId = state.specimens.filter(
+    (s) => s.idStatus !== "identified" && s.location.kind !== "returned",
+  ).length;
+  const onShelf = state.specimens.filter((s) => s.location.kind === "bin").length;
+  const spots = useMemo(() => {
+    let free = 0;
+    for (const b of bins) free += b.capacity - (occupancy.get(b.id) ?? 0);
+    return free;
+  }, [occupancy, bins]);
+  const sites = new Set(state.specimens.map((s) => s.localityCode)).size;
+
+  const cards = [
+    { label: "待接收批次", value: queued },
+    { label: "待鉴定/存疑", value: pendingId },
+    { label: "已上柜标本", value: onShelf },
+    { label: "仓位空余份数", value: spots },
+    { label: "采集点", value: sites },
+  ];
   return (
-    <main className="app">
-      <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
-      </section>
-
-      <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[86, 14, 7, 32][index] ?? 12}</strong>
-          </article>
-        ))}
-      </section>
-
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}筛选</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
-            </div>
-            <button className="primary">保存草稿</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>历史记录</p>
-            <h2>近期工作台</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-    </main>
+    <section className="metrics">
+      {cards.map((c) => (
+        <article key={c.label}>
+          <small>{c.label}</small>
+          <strong>{c.value}</strong>
+        </article>
+      ))}
+    </section>
   );
 }
 
-export default App;
+function Workspace() {
+  const { state, resetAll } = useStore();
+  const route = useHashRoute();
+  const [tab, setTab] = useState<Tab>("register");
+  const [idFilter, setIdFilter] = useState<IdStatus | "all">("all");
+
+  // 详情路由：#/specimen/SP-001
+  const detailMatch = route.match(/^#?\/specimen\/(.+)$/);
+  if (detailMatch) {
+    const id = decodeURIComponent(detailMatch[1]);
+    return <SpecimenDetail id={id} />;
+  }
+
+  return (
+    <>
+      <section className="hero">
+        <p>跨馆调拨 · 按气候带拆箱入库 · 数据仅存本机浏览器</p>
+        <h1>植物标本馆跨馆调拨入库台</h1>
+        <span>
+          三个来源馆（KUN 昆明 / PE 北京 / IBSC 华南）向本馆调拨压制标本。登记时逐份核验调出凭证与检疫结论，任一缺失整批拒收；
+          接收时按箱面气候带拆入热带、亚热带、温带、高寒四个仓位，容量不足或箱内混装则整次拒绝，来源清单与仓位不动；
+          已接收标本可退回，仓位释放、历史保留。
+        </span>
+      </section>
+
+      <Metrics />
+
+      <nav className="tabs">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            className={tab === t.id ? "active" : ""}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+            {t.id === "queue" && (
+              <em className="tab-dot">
+                {state.batches.filter((b) => b.status === "incoming").length}
+              </em>
+            )}
+          </button>
+        ))}
+        <button className="reset" onClick={() => {
+          if (window.confirm("清空浏览器中的全部本地数据并恢复预置台账？")) resetAll();
+        }}>
+          重置演示数据
+        </button>
+      </nav>
+
+      <div className="filter-bar panel">
+        <span>鉴定筛选（同步于采集地卡与各标本列表）：</span>
+        <div className="chips">
+          {ID_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              className={idFilter === f.id ? "chip-active" : ""}
+              onClick={() => setIdFilter(f.id)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        {idFilter !== "all" && (
+          <em className="filter-note">
+            当前仅显示「{idStatusLabel(idFilter)}」相关内容
+          </em>
+        )}
+      </div>
+
+      {tab === "register" && <RegisterPage />}
+      {tab === "queue" && <QueuePage />}
+      {tab === "bins" && <BinsPage />}
+      {tab === "localities" && <LocalitiesPage filter={idFilter} />}
+      {tab === "history" && <HistoryPage />}
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <StoreProvider>
+      <ToastProvider>
+        <main className="app">
+          <Workspace />
+        </main>
+      </ToastProvider>
+    </StoreProvider>
+  );
+}
